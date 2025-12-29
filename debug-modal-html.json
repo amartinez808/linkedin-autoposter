@@ -1,0 +1,31 @@
+{
+  "count": 2,
+  "samples": [
+    {
+      "tagName": "DIV",
+      "id": "",
+      "className": "b0b24aad dfade441 _84c9dcf8 f8e5b0b7 f01ff8cd _658c1888 c62ec7f1 _72dae46b _639e9034 f938302f _3dfbe470",
+      "role": null,
+      "ariaLabel": null,
+      "ariaModal": null,
+      "dataTestModal": null,
+      "innerHTML": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"search-small\" fill=\"currentColor\" aria-hidden=\"true\" data-supported-dps=\"16x16\" viewBox=\"0 0 16 16\" data-token-id=\"382\" width=\"16\" height=\"16\" class=\"_138165e9 d368168b _5d2c99b2\" role=\"img\" aria-label=\"\" style=\"width: 16px; min-width: 16px; height: 16px; min-height: 16px;\"><path d=\"M14.56 12.44 11.3 9.18a5.51 5.51 0 1 0-2.12 2.12l3.26 3.26a1.5 1.5 0 1 0 2.12-2.12M3 6.5A3.5 3.5 0 1 1 6.5 10 3.5 3.5 0 0 1 3 6.5\"></path></svg>",
+      "outerHTML": "<div class=\"b0b24aad dfade441 _84c9dcf8 f8e5b0b7 f01ff8cd _658c1888 c62ec7f1 _72dae46b _639e9034 f938302f _3dfbe470\"><svg xmlns=\"http://www.w3.org/2000/svg\" id=\"search-small\" fill=\"currentColor\" aria-hidden=\"true\" data-supported-dps=\"16x16\" viewBox=\"0 0 16 16\" data-token-id=\"382\" width=\"16\" height=\"16\" class=\"_138165e9 d368168b _5d2c99b2\" role=\"img\" aria-label=\"\" style=\"width: 16px; min-width: 16px; height: 16px; min-height: 16px;\"><path d=\"M14.56 12.44 11.3 9.18a5.51 5.51 0 1 0-2.12 2.12l3.26 3.26a1.5 1.5 0 1 0 2.12-2.12M3 6.5A3.5 3.5 0 1 1 6.5 10 3.5 3.5 0 0 1 3 6.5\"></path></svg></div>",
+      "zIndex": "200",
+      "position": "absolute"
+    },
+    {
+      "tagName": "DIV",
+      "id": "",
+      "className": "bbe3f06c _0c75a276 ad6bc0d7 _7e205c13 _4fe64c57 _03eb842e _60160924",
+      "role": null,
+      "ariaLabel": null,
+      "ariaModal": null,
+      "dataTestModal": null,
+      "innerHTML": "<div class=\"fbe0d572 _2b936e47 _853329c5\" componentkey=\"pixelImageRef\"><div class=\"_596d9cd3 _3295e248 db8d0711 _11d368a7 _717478b4 b64efbc2 _028ecdcc\"><figure class=\"_3fe5150e c6436d82 _4ed0b13d _719e249d\" aria-label=\"\" data-view-name=\"image\"><img class=\"cedec39d c1a37eec _719e249d _4ed0b13d _729404fb\" fetchpriority=\"low\" alt=\"\" src=\"https://px.ads.linkedin.com/collect/?pid=6883&amp;fmt=gif\" data-loaded=\"true\"></figure></div></div>",
+      "outerHTML": "<div class=\"bbe3f06c _0c75a276 ad6bc0d7 _7e205c13 _4fe64c57 _03eb842e _60160924\"><div class=\"fbe0d572 _2b936e47 _853329c5\" componentkey=\"pixelImageRef\"><div class=\"_596d9cd3 _3295e248 db8d0711 _11d368a7 _717478b4 b64efbc2 _028ecdcc\"><figure class=\"_3fe5150e c6436d82 _4ed0b13d _719e249d\" aria-label=\"\" data-view-name=\"image\"><img class=\"cedec39d c1a37eec _719e249d _4ed0b13d _729404fb\" fetchpriority=\"low\" alt=\"\" src=\"https://px.ads.linkedin.com/collect/?pid=6883&amp;fmt=gif\" data-loaded=\"true\"></figure></div></div></div>",
+      "zIndex": "500",
+      "position": "fixed"
+    }
+  ]
+}

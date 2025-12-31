@@ -10,6 +10,7 @@ const openai = new OpenAI({
 const REPLIES_DIR = path.join(__dirname, 'replies');
 const VOICE_PROFILE_PATH = path.join(REPLIES_DIR, 'voice-profile.json');
 const SCRAPED_MESSAGES_PATH = path.join(REPLIES_DIR, 'scraped-messages.json');
+const MANUAL_MESSAGES_PATH = path.join(REPLIES_DIR, 'manual-messages.json');
 
 // Human-like delay function
 function randomDelay(min = 2000, max = 5000) {
@@ -40,6 +41,16 @@ class VoiceLearner {
     } catch (e) {
       this.scrapedMessages = [];
     }
+
+    // Also try to load manual messages
+    try {
+      const data = await fs.readFile(MANUAL_MESSAGES_PATH, 'utf-8');
+      const manualMessages = JSON.parse(data);
+      if (manualMessages.length > 0) {
+        this.scrapedMessages = [...this.scrapedMessages, ...manualMessages];
+        console.log(`📝 Loaded ${manualMessages.length} manual messages`);
+      }
+    } catch (e) {}
 
     // Load existing voice profile if available
     try {
@@ -104,6 +115,24 @@ class VoiceLearner {
 
       const conversations = await this.page.evaluate((maxConversations) => {
         const items = [];
+
+        // DEBUG: Log what we can find
+        const debugInfo = {
+          allLinks: document.querySelectorAll('a').length,
+          messagingLinks: document.querySelectorAll('a[href*="messaging"]').length,
+          threadLinks: document.querySelectorAll('a[href*="thread"]').length,
+          listItems: document.querySelectorAll('li').length,
+          divWithConvo: document.querySelectorAll('[class*="convo"]').length,
+          divWithMsg: document.querySelectorAll('[class*="msg-"]').length
+        };
+        console.log('DEBUG DOM:', JSON.stringify(debugInfo));
+
+        // Also grab some sample hrefs
+        const sampleHrefs = [];
+        document.querySelectorAll('a[href]').forEach((a, i) => {
+          if (i < 20 && a.href.includes('linkedin')) sampleHrefs.push(a.href);
+        });
+        console.log('Sample hrefs:', sampleHrefs.slice(0, 10));
 
         // LinkedIn 2024/2025 messaging UI - find all conversation row elements
         // The conversations appear as list items with links to /messaging/thread/
@@ -449,15 +478,17 @@ Write a reply that:
 1. Matches their exact tone and formality level
 2. Uses their typical greeting/sign-off style (or lack thereof)
 3. Includes their common phrases naturally
-4. Matches their punctuation and emoji patterns
-5. Follows their typical message length
-6. Sounds like they actually wrote it
+4. Follows their typical message length
+5. Sounds like they actually wrote it
 
-IMPORTANT:
+CRITICAL RULES:
+- NEVER use em dashes (—) or en dashes (–). Use regular dashes (-) or periods instead.
+- Keep emojis to a MINIMUM. Only use one occasionally if it feels very natural, otherwise skip them entirely.
 - Don't be robotic or overly formal unless that's their style
 - Don't add things they wouldn't say
 - Keep it natural and conversational
 - Match their energy level
+- When relevant (discussing AI, automation, services, or when they ask what you do), naturally mention the website itsradai.com. Don't force it - only when it fits the conversation.
 
 Reply only with the message text, nothing else:`;
 

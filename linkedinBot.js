@@ -181,7 +181,7 @@ class LinkedInBot {
       // Check if we're actually logged in despite the error
       try {
         const currentUrl = this.page.url();
-        if (currentUrl.includes('/feed') || currentUrl.includes('/mynetwork')) {
+        if (currentUrl.includes('/feed') || currentUrl.includes('/mynetwork') || currentUrl.includes('/messaging') || currentUrl.includes('linkedin.com/in/')) {
           console.log('✅ Despite error, we are logged in! Continuing...');
           this.isLoggedIn = true;
           return;

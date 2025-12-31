@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const VoiceLearner = require('./voiceLearner');
 require('dotenv').config();
 
 // Human-like delay function
@@ -13,6 +14,34 @@ class AutoReplyBot {
   constructor(linkedInBot) {
     this.bot = linkedInBot;
     this.page = linkedInBot.page;
+    this.voiceLearner = new VoiceLearner(linkedInBot);
+    this.voiceEnabled = false;
+  }
+
+  async initVoice() {
+    await this.voiceLearner.init();
+    if (this.voiceLearner.getVoiceProfile()) {
+      this.voiceEnabled = true;
+      console.log('🎤 Voice profile loaded - replies will match your style');
+    } else {
+      console.log('⚠️  No voice profile found. Run learnVoice() to create one.');
+    }
+  }
+
+  async learnVoice(maxConversations = 15) {
+    console.log('\n🎓 Learning your voice from past messages...\n');
+    await this.voiceLearner.scrapeAllConversations(maxConversations);
+    await this.voiceLearner.analyzeVoice();
+    this.voiceEnabled = true;
+    console.log('\n✅ Voice learning complete! Auto-replies will now match your style.\n');
+  }
+
+  async generateSmartReply(incomingMessage, conversationHistory = [], senderName = 'them') {
+    if (this.voiceEnabled) {
+      return await this.voiceLearner.generateReply(incomingMessage, conversationHistory, senderName);
+    }
+    // Fallback to generic
+    return "Thanks for reaching out! I'll get back to you soon.";
   }
 
   // === NAVIGATION ===
@@ -585,6 +614,174 @@ class AutoReplyBot {
     } catch (e) {
       console.log('   Could not take screenshot');
     }
+  }
+
+  // === MAIN AUTO-REPLY LOOP ===
+
+  async processUnreadMessages(options = {}) {
+    const {
+      requireApproval = process.env.REQUIRE_APPROVAL === 'true',
+      maxReplies = 10,
+      skipSalesPitches = true
+    } = options;
+
+    console.log('\n🤖 Starting auto-reply bot...\n');
+    console.log(`   Voice enabled: ${this.voiceEnabled}`);
+    console.log(`   Require approval: ${requireApproval}`);
+    console.log(`   Max replies: ${maxReplies}\n`);
+
+    // Navigate to inbox
+    await this.navigateToInbox();
+    await randomDelay(2000, 3000);
+
+    // Get unread conversations
+    const unreadConvos = await this.getUnreadConversations();
+
+    if (unreadConvos.length === 0) {
+      console.log('📭 No unread messages to reply to');
+      return { processed: 0, replied: 0, skipped: 0 };
+    }
+
+    console.log(`\n📬 Found ${unreadConvos.length} unread conversation(s)\n`);
+
+    let processed = 0;
+    let replied = 0;
+    let skipped = 0;
+
+    for (const convo of unreadConvos.slice(0, maxReplies)) {
+      processed++;
+      console.log(`\n--- Processing ${processed}/${Math.min(unreadConvos.length, maxReplies)} ---`);
+      console.log(`From: ${convo.authorName}`);
+
+      // Open the conversation
+      const opened = await this.openConversation(convo.threadId);
+      if (!opened) {
+        console.log('   Skipping - could not open conversation');
+        skipped++;
+        continue;
+      }
+
+      await randomDelay(2000, 3000);
+
+      // Extract conversation history
+      const history = await this.extractConversationHistory(10);
+
+      if (history.length === 0) {
+        console.log('   Skipping - no messages found');
+        skipped++;
+        continue;
+      }
+
+      // Get the last message (the one we're replying to)
+      const lastMessage = history[history.length - 1];
+
+      // Skip if last message is from us (already replied)
+      if (lastMessage.isOutgoing) {
+        console.log('   Skipping - already replied');
+        skipped++;
+        continue;
+      }
+
+      console.log(`   Last message: "${lastMessage.content.substring(0, 80)}..."`);
+
+      // Detect if it's a sales pitch (optional skip)
+      if (skipSalesPitches && this.detectSalesPitch(lastMessage.content)) {
+        console.log('   Skipping - detected sales pitch');
+        skipped++;
+        continue;
+      }
+
+      // Generate reply in your voice
+      const reply = await this.generateSmartReply(
+        lastMessage.content,
+        history,
+        convo.authorName
+      );
+
+      console.log(`   Generated reply: "${reply.substring(0, 80)}..."`);
+
+      if (requireApproval) {
+        console.log('\n   [APPROVAL REQUIRED] Reply not sent - set REQUIRE_APPROVAL=false to auto-send');
+        // Save pending reply for review
+        await this.savePendingReply(convo, lastMessage, reply);
+      } else {
+        // Send the reply
+        const sent = await this.sendDirectMessage(reply);
+        if (sent) {
+          replied++;
+          console.log('   ✅ Reply sent!');
+          await this.logReply(convo, lastMessage, reply);
+        } else {
+          console.log('   ❌ Failed to send reply');
+        }
+      }
+
+      // Human-like delay between processing conversations
+      await randomDelay(5000, 10000);
+    }
+
+    console.log('\n========================================');
+    console.log(`✅ Auto-reply complete!`);
+    console.log(`   Processed: ${processed}`);
+    console.log(`   Replied: ${replied}`);
+    console.log(`   Skipped: ${skipped}`);
+    console.log('========================================\n');
+
+    return { processed, replied, skipped };
+  }
+
+  detectSalesPitch(message) {
+    const salesKeywords = [
+      'buy now', 'limited time', 'discount', 'special offer',
+      'schedule a call', 'book a demo', 'free trial',
+      'increase your revenue', 'grow your business',
+      'exclusive opportunity', 'act now', 'don\'t miss out',
+      'we help companies', 'our solution', 'our platform'
+    ];
+
+    const lowerMessage = message.toLowerCase();
+    return salesKeywords.some(keyword => lowerMessage.includes(keyword));
+  }
+
+  async savePendingReply(convo, lastMessage, generatedReply) {
+    const pendingPath = path.join(__dirname, 'replies', 'pending-replies.json');
+
+    let pending = [];
+    try {
+      const data = await fs.readFile(pendingPath, 'utf-8');
+      pending = JSON.parse(data);
+    } catch (e) {}
+
+    pending.push({
+      threadId: convo.threadId,
+      authorName: convo.authorName,
+      incomingMessage: lastMessage.content,
+      generatedReply: generatedReply,
+      generatedAt: new Date().toISOString()
+    });
+
+    await fs.writeFile(pendingPath, JSON.stringify(pending, null, 2));
+    console.log('   💾 Saved to pending replies for review');
+  }
+
+  async logReply(convo, lastMessage, sentReply) {
+    const logPath = path.join(__dirname, 'replies', 'sent-replies.json');
+
+    let log = [];
+    try {
+      const data = await fs.readFile(logPath, 'utf-8');
+      log = JSON.parse(data);
+    } catch (e) {}
+
+    log.push({
+      threadId: convo.threadId,
+      authorName: convo.authorName,
+      incomingMessage: lastMessage.content,
+      sentReply: sentReply,
+      sentAt: new Date().toISOString()
+    });
+
+    await fs.writeFile(logPath, JSON.stringify(log, null, 2));
   }
 }
 

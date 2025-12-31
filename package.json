@@ -9,7 +9,10 @@
     "generate": "node cli.js generate",
     "queue": "node cli.js queue",
     "history": "node cli.js history",
-    "clear": "node cli.js clear"
+    "clear": "node cli.js clear",
+    "reply": "node runAutoReply.js reply",
+    "learn-voice": "node runAutoReply.js learn",
+    "auto-reply": "node runAutoReply.js both"
   },
   "keywords": [
     "linkedin",

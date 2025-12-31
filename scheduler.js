@@ -12,29 +12,6 @@ class Scheduler {
     this.postHistory = [];
   }
 
-  // Add randomization to cron schedule (±30 minutes)
-  randomizeCronTime(cronExpression) {
-    // Parse cron: minute hour * * day
-    const parts = cronExpression.split(' ');
-    const baseMinute = parseInt(parts[0]);
-    const baseHour = parseInt(parts[1]);
-
-    // Add random offset: -30 to +30 minutes
-    const offset = Math.floor(Math.random() * 61) - 30;
-    let totalMinutes = baseHour * 60 + baseMinute + offset;
-
-    // Handle day rollover
-    if (totalMinutes < 0) totalMinutes += 24 * 60;
-    if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60;
-
-    const newHour = Math.floor(totalMinutes / 60);
-    const newMinute = totalMinutes % 60;
-
-    parts[0] = newMinute.toString();
-    parts[1] = newHour.toString();
-
-    return parts.join(' ');
-  }
 
   async loadPostQueue() {
     try {
@@ -45,6 +22,18 @@ class Scheduler {
     } catch (error) {
       console.log('ℹ️  No existing queue found, will generate new posts');
       this.postQueue = [];
+    }
+  }
+
+  async loadPostHistory() {
+    try {
+      const historyPath = path.join(__dirname, 'posts', 'history.json');
+      const data = await fs.readFile(historyPath, 'utf-8');
+      this.postHistory = JSON.parse(data);
+      console.log(`📜 Loaded ${this.postHistory.length} entries from history`);
+    } catch (error) {
+      console.log('ℹ️  No existing history found, starting fresh');
+      this.postHistory = [];
     }
   }
 
@@ -148,39 +137,69 @@ class Scheduler {
     }
   }
 
+  async ensureDailyPost() {
+    console.log('🔍 Checking daily post status...');
+    const now = new Date();
+
+    // Get today's start of day
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    // Count successful posts today
+    const postsToday = this.postHistory.filter(p => {
+      const postDate = new Date(p.timestamp);
+      return p.success && postDate >= startOfDay;
+    }).length;
+
+    console.log(`   Posts sent today: ${postsToday}`);
+
+    if (postsToday === 0) {
+      // Check if we're within posting hours
+      const currentHour = now.getHours();
+      const startHour = parseInt(process.env.POSTING_START_HOUR || '9');
+      const endHour = parseInt(process.env.POSTING_END_HOUR || '17');
+
+      if (currentHour >= startHour && currentHour < endHour) {
+        console.log('🚀 No posts sent today. Executing daily post now...');
+        await this.executePost();
+      } else {
+        console.log(`⏰ Outside posting window (${startHour}:00-${endHour}:00). Current time: ${currentHour}:${now.getMinutes().toString().padStart(2, '0')}`);
+        console.log('   Will retry on next hourly check.');
+      }
+    } else {
+      console.log('✅ Daily post already sent. Skipping.');
+    }
+    console.log('');
+  }
+
   async start() {
-    console.log('🚀 Starting LinkedIn Auto-Poster Scheduler\n');
+    console.log('🚀 Starting LinkedIn Auto-Poster (Daily Strategy)\n');
 
     // Create necessary directories
     await fs.mkdir(path.join(__dirname, 'screenshots'), { recursive: true });
     await fs.mkdir(path.join(__dirname, 'posts'), { recursive: true });
 
+    // Load history first
+    await this.loadPostHistory();
+
     // Load existing queue
     await this.loadPostQueue();
 
-    // Set up cron jobs
-    const morningSchedule = process.env.MORNING_SCHEDULE || '0 9 * * 1-5';
-    const afternoonSchedule = process.env.AFTERNOON_SCHEDULE || '0 15 * * 1-5';
-
-    console.log('📅 Scheduling posts:');
-    console.log(`   Morning: ${morningSchedule} (±30 min randomization)`);
-    console.log(`   Afternoon: ${afternoonSchedule} (±30 min randomization)\n`);
-
-    // Morning post
-    const morningJob = cron.schedule(morningSchedule, async () => {
-      await this.executePost();
-    });
-
-    // Afternoon post
-    const afternoonJob = cron.schedule(afternoonSchedule, async () => {
-      await this.executePost();
-    });
-
-    this.jobs.push(morningJob, afternoonJob);
-
-    console.log('✅ Scheduler is running!');
-    console.log('💡 Tip: Posts will publish at scheduled times with ±30 min randomization');
+    console.log('📅 Strategy: One post per day (Check on startup & hourly)');
     console.log('🛑 Press Ctrl+C to stop\n');
+
+    // 1. Check immediately on startup
+    await this.ensureDailyPost();
+
+    // 2. Check every hour (in case computer is left on)
+    const hourlyJob = cron.schedule('0 * * * *', async () => {
+      console.log('⏰ Hourly check triggered.');
+      await this.ensureDailyPost();
+    });
+
+    this.jobs.push(hourlyJob);
+
+    console.log('✅ Hourly checker is running!');
 
     // Pre-generate some posts for the queue
     if (this.postQueue.length < 5) {

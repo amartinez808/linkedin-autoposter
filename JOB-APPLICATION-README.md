@@ -103,7 +103,7 @@ Schedule (configurable in `.env`):
 ## Files Structure
 
 ```
-linkedin-autoposter/
+linkedInAuto/
 ├── applyNow.js              # Manual test script
 ├── autoApply.js             # Automated scheduler
 ├── jobSearchBot.js          # Job search logic

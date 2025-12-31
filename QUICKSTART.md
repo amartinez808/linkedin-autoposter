@@ -9,7 +9,7 @@
 ## Step 2: Configure
 
 ```bash
-cd /Users/antoniomartinez/linkedin-autoposter
+cd /Users/antoniomartinez/linkedInAuto
 
 # Create your .env file
 cp .env.example .env
@@ -87,13 +87,13 @@ To keep it running even after closing terminal:
 npm install -g pm2
 
 # Start with PM2
-pm2 start index.js --name linkedin-autoposter
+pm2 start index.js --name linkedInAuto
 
 # View logs
-pm2 logs linkedin-autoposter
+pm2 logs linkedInAuto
 
 # Stop
-pm2 stop linkedin-autoposter
+pm2 stop linkedInAuto
 ```
 
 ---

@@ -1,5 +1,5 @@
 {
-  "name": "linkedin-autoposter",
+  "name": "linkedInAuto",
   "version": "1.0.0",
   "description": "Automated LinkedIn posting system for RAD AI",
   "main": "index.js",

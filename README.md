@@ -63,7 +63,7 @@
 ### 1. Install Dependencies
 
 ```bash
-cd /Users/antoniomartinez/linkedin-autoposter
+cd /Users/antoniomartinez/linkedInAuto
 npm install
 ```
 
@@ -219,7 +219,7 @@ Guidelines:
 ## 📊 File Structure
 
 ```
-linkedin-autoposter/
+linkedInAuto/
 ├── index.js              # Main entry point
 ├── scheduler.js          # Cron job manager
 ├── linkedinBot.js        # Puppeteer automation

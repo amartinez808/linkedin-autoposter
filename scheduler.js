@@ -1,5 +1,9 @@
 const cron = require('node-cron');
 const LinkedInBot = require('./linkedinBot');
+const AutoReplyBot = require('./autoReplyBot');
+const JobSearchBot = require('./jobSearchBot');
+const JobApplicationBot = require('./jobApplicationBot');
+const JobMatcher = require('./jobMatcher');
 const { generateLinkedInPost } = require('./contentGenerator');
 const { getImageForPost } = require('./imageGenerator');
 const fs = require('fs').promises;
@@ -10,6 +14,7 @@ class Scheduler {
     this.jobs = [];
     this.postQueue = [];
     this.postHistory = [];
+    this.applicationHistory = [];
   }
 
 
@@ -137,6 +142,210 @@ class Scheduler {
     }
   }
 
+  async checkAndReplyToMessages() {
+    console.log('\n💬 Checking for unread LinkedIn messages...');
+
+    const linkedInBot = new LinkedInBot();
+    const autoReplyBot = new AutoReplyBot(linkedInBot);
+
+    try {
+      await linkedInBot.init();
+
+      try {
+        await linkedInBot.login();
+      } catch (loginError) {
+        if (loginError.message.includes('Verification required')) {
+          console.error('⚠️  LinkedIn verification required.');
+          console.error('   You need to log in manually and update VERIFICATION_CODE in .env');
+          console.error('   Codes expire after ~30 minutes. Skipping this check.\n');
+          return;
+        }
+        throw loginError;
+      }
+
+      // Initialize voice learning
+      await autoReplyBot.initVoice();
+
+      // Process unread messages with auto-send
+      const results = await autoReplyBot.processUnreadMessages({
+        requireApproval: process.env.REQUIRE_APPROVAL === 'true',
+        maxReplies: 10,
+        skipSalesPitches: true
+      });
+
+      console.log(`\n✅ Auto-reply complete: ${results.replied} sent, ${results.skipped} skipped\n`);
+
+    } catch (error) {
+      console.error('❌ Error during auto-reply:', error.message);
+    } finally {
+      await linkedInBot.close();
+    }
+  }
+
+  async loadApplicationHistory() {
+    try {
+      const historyPath = path.join(__dirname, 'applications', 'history.json');
+      const data = await fs.readFile(historyPath, 'utf-8');
+      this.applicationHistory = JSON.parse(data);
+      console.log(`📜 Loaded ${this.applicationHistory.length} job application(s) from history`);
+    } catch (error) {
+      console.log('ℹ️  No existing application history found, starting fresh');
+      this.applicationHistory = [];
+    }
+  }
+
+  async saveApplicationHistory() {
+    const historyPath = path.join(__dirname, 'applications', 'history.json');
+    await fs.mkdir(path.join(__dirname, 'applications'), { recursive: true });
+    await fs.writeFile(historyPath, JSON.stringify(this.applicationHistory, null, 2));
+  }
+
+  async logApplication(job, success, reason = null) {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      jobId: job.id || job.url,
+      title: job.title,
+      company: job.company,
+      location: job.location,
+      url: job.url,
+      success: success,
+      reason: reason
+    };
+
+    this.applicationHistory.push(logEntry);
+    await this.saveApplicationHistory();
+  }
+
+  async applyToJobs() {
+    console.log('\n💼 Starting job application process...');
+
+    // Check daily limit
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const applicationsToday = this.applicationHistory.filter(a => {
+      const appDate = new Date(a.timestamp);
+      return appDate >= startOfDay;
+    }).length;
+
+    const maxPerDay = parseInt(process.env.MAX_APPLICATIONS_PER_DAY || '10');
+
+    console.log(`   Applications today: ${applicationsToday}/${maxPerDay}`);
+
+    if (applicationsToday >= maxPerDay) {
+      console.log('⚠️  Daily application limit reached. Skipping.\n');
+      return { searched: 0, applied: 0, skipped: 0 };
+    }
+
+    const linkedInBot = new LinkedInBot();
+    const jobSearchBot = new JobSearchBot(linkedInBot);
+    const jobAppBot = new JobApplicationBot(linkedInBot);
+
+    try {
+      await linkedInBot.init();
+
+      try {
+        await linkedInBot.login();
+      } catch (loginError) {
+        if (loginError.message.includes('Verification required')) {
+          console.error('⚠️  LinkedIn verification required.');
+          console.error('   You need to log in manually and update VERIFICATION_CODE in .env');
+          console.error('   Skipping job applications this cycle.\n');
+          return { searched: 0, applied: 0, skipped: 0 };
+        }
+        throw loginError;
+      }
+
+      // Search for jobs
+      const jobs = await jobSearchBot.searchJobs({
+        keywords: process.env.JOB_KEYWORDS || 'Software Engineer',
+        location: process.env.JOB_LOCATION || 'Remote',
+        experienceLevel: process.env.EXPERIENCE_LEVEL || 'mid-senior',
+        easyApplyOnly: true,
+        maxResults: parseInt(process.env.MAX_JOBS_PER_SEARCH || '25')
+      });
+
+      console.log(`\n🔍 Found ${jobs.length} jobs to review\n`);
+
+      // AI filtering if enabled
+      let filteredJobs = jobs;
+      if (process.env.USE_AI_FILTERING === 'true') {
+        const jobMatcher = new JobMatcher();
+        const minScore = parseInt(process.env.MIN_MATCH_SCORE || '60');
+        filteredJobs = await jobMatcher.filterJobs(jobs, minScore);
+      } else {
+        console.log('ℹ️  AI filtering disabled (set USE_AI_FILTERING=true to enable)\n');
+      }
+
+      let applied = 0;
+      let skipped = 0;
+      const remainingSlots = maxPerDay - applicationsToday;
+
+      for (const job of filteredJobs.slice(0, remainingSlots)) {
+        // Check if we've already applied to this job
+        const alreadyApplied = this.applicationHistory.some(a =>
+          a.jobId === job.id || a.url === job.url
+        );
+
+        if (alreadyApplied) {
+          console.log(`⏭️  Skipping "${job.title}" at ${job.company} (already applied)\n`);
+          skipped++;
+          continue;
+        }
+
+        // Apply to job
+        const applicationData = {
+          phone: process.env.PHONE,
+          email: process.env.EMAIL,
+          city: process.env.CITY,
+          linkedinUrl: process.env.LINKEDIN_URL,
+          github: process.env.GITHUB,
+          website: process.env.WEBSITE
+        };
+
+        const autoSubmit = process.env.AUTO_SUBMIT_APPLICATIONS === 'true';
+
+        if (!autoSubmit) {
+          console.log(`📋 Would apply to: "${job.title}" at ${job.company}`);
+          console.log(`   Set AUTO_SUBMIT_APPLICATIONS=true to enable auto-apply\n`);
+          await this.logApplication(job, false, 'Auto-submit disabled');
+          skipped++;
+          continue;
+        }
+
+        const result = await jobAppBot.applyToJob(job, applicationData);
+
+        await this.logApplication(job, result.success, result.reason);
+
+        if (result.success) {
+          applied++;
+        } else {
+          skipped++;
+        }
+
+        // Human-like delay between applications
+        await new Promise(r => setTimeout(r, Math.random() * 30000 + 20000)); // 20-50 seconds
+      }
+
+      console.log('\n========================================');
+      console.log(`✅ Job application session complete!`);
+      console.log(`   Searched: ${jobs.length} jobs`);
+      console.log(`   Applied: ${applied}`);
+      console.log(`   Skipped: ${skipped}`);
+      console.log(`   Total today: ${applicationsToday + applied}/${maxPerDay}`);
+      console.log('========================================\n');
+
+      return { searched: jobs.length, applied, skipped };
+
+    } catch (error) {
+      console.error('❌ Error during job applications:', error.message);
+      return { searched: 0, applied: 0, skipped: 0 };
+    } finally {
+      await linkedInBot.close();
+    }
+  }
+
   async ensureDailyPost() {
     console.log('🔍 Checking daily post status...');
     const now = new Date();
@@ -173,33 +382,66 @@ class Scheduler {
   }
 
   async start() {
-    console.log('🚀 Starting LinkedIn Auto-Poster (Daily Strategy)\n');
+    console.log('🚀 Starting LinkedIn Automation Suite\n');
 
     // Create necessary directories
     await fs.mkdir(path.join(__dirname, 'screenshots'), { recursive: true });
     await fs.mkdir(path.join(__dirname, 'posts'), { recursive: true });
+    await fs.mkdir(path.join(__dirname, 'replies'), { recursive: true });
+    await fs.mkdir(path.join(__dirname, 'applications'), { recursive: true });
 
-    // Load history first
+    // Load history
     await this.loadPostHistory();
+    await this.loadApplicationHistory();
 
     // Load existing queue
     await this.loadPostQueue();
 
-    console.log('📅 Strategy: One post per day (Check on startup & hourly)');
+    console.log('📅 Posts: One per day (Check hourly)');
+    console.log('💬 Auto-Reply: Check every 30 minutes');
+    console.log('💼 Job Applications: Daily at 9 AM & 2 PM (if enabled)');
     console.log('🛑 Press Ctrl+C to stop\n');
 
     // 1. Check immediately on startup
     await this.ensureDailyPost();
 
-    // 2. Check every hour (in case computer is left on)
+    // Check for messages immediately on startup
+    await this.checkAndReplyToMessages();
+
+    // 2. Check every hour for posts (in case computer is left on)
     const hourlyJob = cron.schedule('0 * * * *', async () => {
-      console.log('⏰ Hourly check triggered.');
+      console.log('⏰ Hourly post check triggered.');
       await this.ensureDailyPost();
     });
 
-    this.jobs.push(hourlyJob);
+    // 3. Check for messages every 30 minutes
+    const messageJob = cron.schedule('*/30 * * * *', async () => {
+      console.log('⏰ Message check triggered (every 30 min).');
+      await this.checkAndReplyToMessages();
+    });
 
-    console.log('✅ Hourly checker is running!');
+    // 4. Apply to jobs twice daily (9 AM and 2 PM on weekdays)
+    const morningJobsSchedule = process.env.APPLY_MORNING_SCHEDULE || '30 9 * * 1-5';
+    const afternoonJobsSchedule = process.env.APPLY_AFTERNOON_SCHEDULE || '0 14 * * 1-5';
+
+    const morningJobsJob = cron.schedule(morningJobsSchedule, async () => {
+      console.log('⏰ Morning job application check triggered.');
+      await this.applyToJobs();
+    });
+
+    const afternoonJobsJob = cron.schedule(afternoonJobsSchedule, async () => {
+      console.log('⏰ Afternoon job application check triggered.');
+      await this.applyToJobs();
+    });
+
+    this.jobs.push(hourlyJob);
+    this.jobs.push(messageJob);
+    this.jobs.push(morningJobsJob);
+    this.jobs.push(afternoonJobsJob);
+
+    console.log('✅ Hourly post checker is running!');
+    console.log('✅ Message checker is running (every 30 min)!');
+    console.log('✅ Job application checker is running (9:30 AM & 2 PM weekdays)!');
 
     // Pre-generate some posts for the queue
     if (this.postQueue.length < 5) {
@@ -214,7 +456,9 @@ class Scheduler {
     console.log('📊 Current status:');
     console.log(`   Posts in queue: ${this.postQueue.length}`);
     console.log(`   Posts published: ${this.postHistory.filter(p => p.success).length}`);
-    console.log(`   Failed attempts: ${this.postHistory.filter(p => !p.success).length}\n`);
+    console.log(`   Failed posts: ${this.postHistory.filter(p => !p.success).length}`);
+    console.log(`   Job applications: ${this.applicationHistory.filter(a => a.success).length} successful`);
+    console.log(`   Failed applications: ${this.applicationHistory.filter(a => !a.success).length}\n`);
   }
 
   stop() {

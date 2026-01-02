@@ -12,7 +12,13 @@
     "clear": "node cli.js clear",
     "reply": "node runAutoReply.js reply",
     "learn-voice": "node runAutoReply.js learn",
-    "auto-reply": "node runAutoReply.js both"
+    "auto-reply": "node runAutoReply.js both",
+    "scheduler-start": "node manage-scheduler.js start",
+    "scheduler-stop": "node manage-scheduler.js stop",
+    "scheduler-restart": "node manage-scheduler.js restart",
+    "scheduler-status": "node manage-scheduler.js status",
+    "scheduler-logs": "node manage-scheduler.js logs",
+    "login": "node login-helper.js"
   },
   "keywords": [
     "linkedin",

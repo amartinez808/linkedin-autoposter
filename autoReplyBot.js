@@ -118,26 +118,52 @@ class AutoReplyBot {
     return false;
   }
 
-  async openConversation(threadId) {
-    console.log(`💬 Opening conversation: ${threadId}`);
+  async openConversation(convo) {
+    // convo can be an object with elementIndex, or a threadId string (legacy)
+    const isIndexBased = typeof convo === 'object' && convo.elementIndex !== undefined;
+    const displayName = isIndexBased ? `index ${convo.elementIndex}` : convo;
+
+    console.log(`💬 Opening conversation: ${displayName}`);
 
     try {
-      // Try clicking the conversation in the list first
-      const conversationSelector = `[data-conversation-id="${threadId}"], [href*="${threadId}"]`;
+      if (isIndexBased) {
+        // Click directly on the conversation list item by index
+        const clicked = await this.page.evaluate((index) => {
+          const items = document.querySelectorAll('.msg-conversation-listitem');
+          if (items[index]) {
+            items[index].click();
+            return true;
+          }
+          return false;
+        }, convo.elementIndex);
 
-      try {
-        await this.page.waitForSelector(conversationSelector, { timeout: 5000 });
-        await this.page.click(conversationSelector);
-        await randomDelay(2000, 3000);
-        console.log('   Conversation opened via click');
-        return true;
-      } catch (e) {
-        // Fall back to direct navigation
-        const threadUrl = `https://www.linkedin.com/messaging/thread/${threadId}/`;
-        await this.page.goto(threadUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await randomDelay(2000, 4000);
-        console.log('   Conversation opened via URL');
-        return true;
+        if (clicked) {
+          await randomDelay(2500, 4000);
+          console.log('   Conversation opened via click');
+          return true;
+        } else {
+          console.log('   Could not find conversation at index');
+          return false;
+        }
+      } else {
+        // Legacy: try threadId-based navigation
+        const threadId = convo;
+        const conversationSelector = `[data-conversation-id="${threadId}"], [href*="${threadId}"]`;
+
+        try {
+          await this.page.waitForSelector(conversationSelector, { timeout: 5000 });
+          await this.page.click(conversationSelector);
+          await randomDelay(2000, 3000);
+          console.log('   Conversation opened via click');
+          return true;
+        } catch (e) {
+          // Fall back to direct navigation
+          const threadUrl = `https://www.linkedin.com/messaging/thread/${threadId}/`;
+          await this.page.goto(threadUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await randomDelay(2000, 4000);
+          console.log('   Conversation opened via URL');
+          return true;
+        }
       }
     } catch (error) {
       console.error('   Error opening conversation:', error.message);
@@ -190,39 +216,36 @@ class AutoReplyBot {
       const conversations = await this.page.evaluate(() => {
         const items = [];
 
-        // Look for conversation cards with unread indicators
+        // Look for conversation list items
         const conversationCards = document.querySelectorAll(
-          '.msg-conversation-listitem, .msg-conversation-card, [class*="conversation-list-item"]'
+          '.msg-conversation-listitem'
         );
 
-        conversationCards.forEach(card => {
-          // Check for unread badge
+        conversationCards.forEach((card, index) => {
+          // Check for unread badge - LinkedIn uses notification badge class
           const unreadBadge = card.querySelector(
-            '.msg-conversation-card__unread-count, [class*="notification-badge"], .artdeco-notification-badge'
+            '.notification-badge, .artdeco-notification-badge, [class*="notification-badge"]'
           );
 
-          if (unreadBadge) {
+          // Also check for unread indicator via text/CSS
+          const hasUnreadIndicator = card.querySelector('[class*="unread"]') !== null ||
+                                     card.classList.contains('msg-conversation-listitem--unread');
+
+          if (unreadBadge || hasUnreadIndicator) {
             const nameEl = card.querySelector(
-              '.msg-conversation-card__participant-names, [class*="participant-name"], .msg-conversation-listitem__participant-names'
+              '.msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names'
             );
+
             const previewEl = card.querySelector(
               '.msg-conversation-card__message-snippet, [class*="message-snippet"]'
             );
-            const linkEl = card.querySelector('a[href*="messaging"]');
 
-            // Extract thread ID from href or data attribute
-            let threadId = card.getAttribute('data-conversation-id');
-            if (!threadId && linkEl) {
-              const href = linkEl.getAttribute('href') || '';
-              const match = href.match(/thread\/([^/]+)/);
-              if (match) threadId = match[1];
-            }
-
+            // Store the element index for clicking later (no reliable threadId in DOM)
             items.push({
-              threadId: threadId,
+              elementIndex: index,
               authorName: nameEl ? nameEl.innerText.trim() : 'Unknown',
               preview: previewEl ? previewEl.innerText.trim() : '',
-              unreadCount: parseInt(unreadBadge.innerText) || 1
+              unreadCount: unreadBadge ? (parseInt(unreadBadge.innerText) || 1) : 1
             });
           }
         });
@@ -243,34 +266,49 @@ class AutoReplyBot {
     console.log(`📜 Extracting conversation history (last ${limit} messages)...`);
 
     try {
+      // Wait a moment for messages to load
+      await randomDelay(1500, 2500);
+
       const messages = await this.page.evaluate((messageLimit) => {
         const items = [];
 
+        // LinkedIn 2024/2025 DOM structure uses .msg-s-event for message containers
         const messageElements = document.querySelectorAll(
-          '.msg-s-message-list__event, .msg-s-event-listitem, [class*="message-list-item"]'
+          '.msg-s-event, .msg-s-message-list__event, .msg-s-event-listitem'
         );
 
         const relevantMessages = Array.from(messageElements).slice(-messageLimit);
 
         relevantMessages.forEach(msgEl => {
-          const senderEl = msgEl.querySelector(
-            '.msg-s-message-group__name, [class*="sender-name"], .msg-s-event-listitem__link'
-          );
+          // Try multiple selectors for message content
           const contentEl = msgEl.querySelector(
-            '.msg-s-event-listitem__body, [class*="message-body"], .msg-s-message-list-content'
+            '.msg-s-event-listitem__body, .msg-s-message-list-content, p.msg-s-event-listitem__body'
+          ) || msgEl.querySelector('p');
+
+          // Try to find sender name
+          const senderEl = msgEl.querySelector(
+            '.msg-s-message-group__name, .msg-s-event-listitem__link, [class*="sender"], .msg-s-message-group__profile-link'
           );
+
+          // Try to find timestamp
           const timeEl = msgEl.querySelector(
-            '.msg-s-message-group__timestamp, time, [class*="timestamp"]'
+            '.msg-s-message-group__timestamp, time, [class*="timestamp"], .msg-s-event-listitem__timestamp'
           );
 
-          // Check if this is an outgoing message (sent by user)
-          const isOutgoing = msgEl.classList.contains('msg-s-message-list__event--outbound') ||
-                            msgEl.querySelector('[class*="outbound"]') !== null;
+          // Check if this is an outgoing message (multiple ways to detect)
+          const classes = msgEl.className || '';
+          const parentClasses = msgEl.parentElement?.className || '';
+          const isOutgoing = classes.includes('outbound') ||
+                            parentClasses.includes('outbound') ||
+                            msgEl.querySelector('[class*="outbound"]') !== null ||
+                            msgEl.closest('[class*="outbound"]') !== null;
 
-          if (contentEl) {
+          // Only add if we have content
+          const content = contentEl ? contentEl.innerText.trim() : '';
+          if (content && content.length > 0) {
             items.push({
               sender: senderEl ? senderEl.innerText.trim() : (isOutgoing ? 'You' : 'Other'),
-              content: contentEl.innerText.trim(),
+              content: content,
               timestamp: timeEl ? timeEl.getAttribute('datetime') || timeEl.innerText.trim() : null,
               isOutgoing: isOutgoing
             });
@@ -653,8 +691,8 @@ class AutoReplyBot {
       console.log(`\n--- Processing ${processed}/${Math.min(unreadConvos.length, maxReplies)} ---`);
       console.log(`From: ${convo.authorName}`);
 
-      // Open the conversation
-      const opened = await this.openConversation(convo.threadId);
+      // Open the conversation (pass full object for index-based clicking)
+      const opened = await this.openConversation(convo);
       if (!opened) {
         console.log('   Skipping - could not open conversation');
         skipped++;

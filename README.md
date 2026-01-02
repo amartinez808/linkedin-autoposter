@@ -34,6 +34,15 @@
 - Customized for RAD AI's brand voice
 - Smart hashtag inclusion
 
+### 💬 Auto-Reply to LinkedIn DMs (NEW!)
+- **Voice Learning**: Analyzes your past messages to match your writing style
+- **Smart Reply Generation**: Creates personalized responses in YOUR voice
+- **Sales Pitch Detection**: Automatically skips spam messages
+- **Approval Mode**: Review replies before sending (optional)
+- **Scheduled Checks**: Automatically checks for new messages every 30 minutes
+- **Natural Language**: No em dashes, minimal emojis, your exact phrasing
+- **Website Promotion**: Naturally mentions itsradai.com when relevant
+
 ### 🎭 Anti-Detection Measures
 - Random delays between actions (2-8 seconds)
 - Human-like typing simulation
@@ -43,9 +52,9 @@
 - Session persistence between runs
 
 ### 📅 Smart Scheduling
-- Posts 2x daily (default: 9 AM & 3 PM on weekdays)
+- Posts 1x daily (checks hourly)
+- Auto-reply checks every 30 minutes
 - Automatic time randomization
-- Skips weekends (configurable)
 - Pre-generates content queue
 - Auto-retry on failures
 
